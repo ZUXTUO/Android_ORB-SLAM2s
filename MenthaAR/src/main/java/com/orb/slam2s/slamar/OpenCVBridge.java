@@ -81,6 +81,11 @@ public class OpenCVBridge {
     public static native void nativeMatToBitmap(long matAddr, Bitmap bitmap);
 
     /**
+     * native Mat 缩放后转为小尺寸 Bitmap（液态玻璃低分辨率帧快照，内部 resize）
+     */
+    public static native void nativeMatToBitmapScaled(long matAddr, Bitmap bitmap);
+
+    /**
      * Android Bitmap 转为 native Mat
      */
     public static native void nativeBitmapToMat(Bitmap bitmap, long matAddr);

@@ -6,7 +6,7 @@
     android:layout_height="250dp"
     android:layout_marginTop="60dp"
     android:layout_marginStart="16dp"
-    app:cardBackgroundColor="#CC000000"
+    app:cardBackgroundColor="#D937474F"
     app:cardCornerRadius="8dp"
     app:cardElevation="6dp"
     android:visibility="gone">
@@ -20,7 +20,7 @@
             android:id="@+id/qr_window_header"
             android:layout_width="match_parent"
             android:layout_height="32dp"
-            android:background="#2196F3"
+            android:background="#9900A9DE"
             android:paddingStart="8dp"
             android:paddingEnd="8dp">
 
@@ -63,7 +63,7 @@
                 android:layout_width="160dp"
                 android:layout_height="160dp"
                 android:scaleType="fitCenter"
-                android:background="#FFFFFF"
+                android:background="@drawable/bg_glass_white"
                 android:padding="8dp"
                 android:contentDescription="@string/qr_code_desc" />
 

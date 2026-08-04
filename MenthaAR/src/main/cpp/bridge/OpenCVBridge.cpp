@@ -195,6 +195,47 @@ JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeMatToBitmap
     AndroidBitmap_unlockPixels(env, bitmap);
 }
 
+JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeMatToBitmapScaled
+  (JNIEnv *env, jclass cls, jlong matAddr, jobject bitmap)
+{
+    // 将 Mat 缩放到 Bitmap 尺寸（液态玻璃低分辨率帧快照：避免全尺寸拷贝 + 天然模糊）
+    cv::Mat* mat = (cv::Mat*)matAddr;
+    if (!mat || mat->empty() || !bitmap) return;
+
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("nativeMatToBitmapScaled: AndroidBitmap_getInfo failed");
+        return;
+    }
+    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
+        LOGE("nativeMatToBitmapScaled: unsupported bitmap format");
+        return;
+    }
+    void* pixels = NULL;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        LOGE("nativeMatToBitmapScaled: AndroidBitmap_lockPixels failed");
+        return;
+    }
+
+    cv::Mat src;
+    if (mat->channels() == 1) {
+        cv::cvtColor(*mat, src, cv::COLOR_GRAY2RGBA);
+    } else {
+        src = *mat;
+    }
+    cv::Mat resized;
+    cv::resize(src, resized, cv::Size(info.width, info.height), 0, 0, cv::INTER_LINEAR);
+
+    cv::Mat bmp(info.height, info.width, CV_8UC4, pixels, info.stride);
+    if (resized.channels() == 4) {
+        resized.copyTo(bmp);
+    } else {
+        cv::cvtColor(resized, bmp, cv::COLOR_RGB2RGBA);
+    }
+
+    AndroidBitmap_unlockPixels(env, bitmap);
+}
+
 JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeBitmapToMat
   (JNIEnv *env, jclass cls, jobject bitmap, jlong matAddr)
 {

@@ -65,6 +65,9 @@ public class PrivacyConsentActivity extends AppCompatActivity {
 
         ScrollView scrollView = findViewById(R.id.scroll_view_privacy);
         btnAgree = findViewById(R.id.btn_agree);
+        LiquidGlassDrawable agreeGray = LiquidGlassDrawable.gray();
+        agreeGray.setCornerRadiusPx(18 * getResources().getDisplayMetrics().density);
+        btnAgree.setBackground(agreeGray);
         tvScrollHint = findViewById(R.id.tv_scroll_hint);
 
         // 加载对应语言的 markdown 内容
@@ -86,7 +89,9 @@ public class PrivacyConsentActivity extends AppCompatActivity {
         scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
             if (!v.canScrollVertically(1)) { // 无法继续向下滚动 = 已到底部
                 btnAgree.setEnabled(true);
-                btnAgree.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+                LiquidGlassDrawable agreeBlue = LiquidGlassDrawable.blue();
+                agreeBlue.setCornerRadiusPx(18 * getResources().getDisplayMetrics().density);
+                btnAgree.setBackground(agreeBlue);
                 btnAgree.setTextColor(0xFFFFFFFF);
                 tvScrollHint.setText(getString(R.string.privacy_scroll_done));
                 tvScrollHint.setTextColor(0xFF4CAF50);

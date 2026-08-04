@@ -62,10 +62,10 @@
             android:paddingEnd="24dp"
             android:text="@string/privacy_agree"
             android:textAllCaps="false"
-            android:textColor="#88FFFFFF"
+            android:textColor="#FFFFFF"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:backgroundTint="#FF666666" />
+            android:background="@drawable/bg_glass_agree" />
     </LinearLayout>
 
 </LinearLayout>

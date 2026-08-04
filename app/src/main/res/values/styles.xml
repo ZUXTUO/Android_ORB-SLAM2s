@@ -13,4 +13,16 @@
         <!-- 在此处自定义您的主题。 -->
     </style>
 
+    <!-- 液态玻璃对话框主题：透明窗口 + 背后调暗，玻璃背景由 GlassDialog 程序化绘制 -->
+    <style name="LiquidGlassDialogTheme" parent="android:Theme.Material.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFrame">@null</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.35</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
+
 </resources>

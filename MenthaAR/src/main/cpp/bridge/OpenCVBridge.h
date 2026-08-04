@@ -38,6 +38,10 @@ JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeFlipBoth
 JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeMatToBitmap
   (JNIEnv *, jclass, jlong, jobject);
 
+// 缩放到 Bitmap 尺寸（液态玻璃低分辨率帧快照）
+JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeMatToBitmapScaled
+  (JNIEnv *, jclass, jlong, jobject);
+
 JNIEXPORT void JNICALL Java_com_orb_slam2s_slamar_OpenCVBridge_nativeBitmapToMat
   (JNIEnv *, jclass, jobject, jlong);
 

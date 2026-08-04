@@ -51,7 +51,9 @@ freeline/
 freeline_project_description.json
 
 diff_report.md
+
 .claude/settings.local.json
+
 docs/profiler_tools/vtonax_profile.bin
 docs/profiler_tools/mentha_profile.bin
 docs/profiler_tools/profile_trace.json
@@ -59,7 +61,7 @@ benchmarks
 docs/key
 VtonaxAR/src/main/cpp/ubuntu/benchmark.mp4
 
-TEMP
+参考
 日志.txt
 目标.txt
 

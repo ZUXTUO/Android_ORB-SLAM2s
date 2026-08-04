@@ -59,10 +59,10 @@
     <string name="hint_map_load_failed">Load failed: %1$s</string>
     <string name="permission_camera_storage_required">Camera and storage permissions are required. Please grant permissions in settings.</string>
 
-    <string name="category_ar">AR Controls</string>
-    <string name="category_map">Map</string>
-    <string name="category_slam">SLAM</string>
-    <string name="category_display">Display</string>
+    <string name="category_ar">AR Controls ▾</string>
+    <string name="category_map">Map ▾</string>
+    <string name="category_slam">SLAM ▾</string>
+    <string name="category_display">Display ▾</string>
 
     <string name="btn_3dof">3DOF</string>
     <string name="btn_3dof_close">Close 3DOF</string>

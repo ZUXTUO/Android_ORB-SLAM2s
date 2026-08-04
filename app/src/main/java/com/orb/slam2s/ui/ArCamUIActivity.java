@@ -80,7 +80,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
 
     private Button btn3DofCube;
     private final android.os.Handler uiHandler = new android.os.Handler();
-    private androidx.appcompat.app.AlertDialog loadingDialog;
+    private android.app.Dialog loadingDialog;
     private boolean slamInitialized = false;
 
     // 拖动相关变量
@@ -270,6 +270,66 @@ public class ArCamUIActivity extends AppCompatActivity implements
         btnSaveMap = findViewById(R.id.btn_save_map);
         btnLoadMap = findViewById(R.id.btn_load_map);
         btnMapList = findViewById(R.id.btn_map_list);
+
+        // 应用液态玻璃按钮背景（参考 Prismal 玻璃控件配方：弧线高光 + Fresnel 边缘 + 内阴影）
+        int glassRadiusPx = (int) (14 * getResources().getDisplayMetrics().density);
+        int[] neutralIds = { R.id.btn_group_ar, R.id.btn_group_map, R.id.btn_group_slam, R.id.btn_group_display,
+                R.id.btn_create_ar_object, R.id.btn_save_map, R.id.btn_load_map, R.id.btn_map_list,
+                R.id.btn_toggle_pointcloud };
+        for (int id : neutralIds) {
+            View v = findViewById(id);
+            if (v != null) {
+                LiquidGlassDrawable d = LiquidGlassDrawable.neutral();
+                d.setCornerRadiusPx(glassRadiusPx);
+                v.setBackground(d);
+            }
+        }
+        View v3d = findViewById(R.id.btn_3dof_cube);
+        if (v3d != null) {
+            LiquidGlassDrawable d = LiquidGlassDrawable.red();
+            d.setCornerRadiusPx(glassRadiusPx);
+            v3d.setBackground(d);
+        }
+        View vslam = findViewById(R.id.btn_toggle_slam);
+        if (vslam != null) {
+            LiquidGlassDrawable d = LiquidGlassDrawable.green();
+            d.setCornerRadiusPx(glassRadiusPx);
+            vslam.setBackground(d);
+        }
+        View vweb = findViewById(R.id.btn_start_web);
+        if (vweb != null) {
+            LiquidGlassDrawable d = LiquidGlassDrawable.blue();
+            d.setCornerRadiusPx(glassRadiusPx);
+            vweb.setBackground(d);
+        }
+
+        // 液态玻璃按压弹性动画（参考 Prismal 弹簧：按下压缩 + 松手过冲回弹）
+        int[] allBtnIds = { R.id.btn_group_ar, R.id.btn_create_ar_object, R.id.btn_3dof_cube,
+                R.id.btn_group_map, R.id.btn_save_map, R.id.btn_load_map, R.id.btn_map_list,
+                R.id.btn_group_slam, R.id.btn_toggle_slam, R.id.btn_group_display,
+                R.id.btn_toggle_pointcloud, R.id.btn_start_web };
+        for (int id : allBtnIds) {
+            final View v = findViewById(id);
+            if (v != null) {
+                v.setOnTouchListener(new View.OnTouchListener() {
+                    @Override
+                    public boolean onTouch(View view, android.view.MotionEvent event) {
+                        switch (event.getActionMasked()) {
+                            case android.view.MotionEvent.ACTION_DOWN:
+                                view.animate().scaleX(0.93f).scaleY(0.93f).setDuration(90).start();
+                                break;
+                            case android.view.MotionEvent.ACTION_UP:
+                            case android.view.MotionEvent.ACTION_CANCEL:
+                                view.animate().scaleX(1f).scaleY(1f).setDuration(260)
+                                        .setInterpolator(new android.view.animation.OvershootInterpolator(1.8f))
+                                        .start();
+                                break;
+                        }
+                        return false; // 不消费事件，点击仍正常触发
+                    }
+                });
+            }
+        }
         // 创建AR物体按钮（原检测平面功能）
         btnCreateArObject.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -460,7 +520,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
                 java.util.Locale.getDefault()).format(new java.util.Date());
         input.setText(defaultName);
 
-        new androidx.appcompat.app.AlertDialog.Builder(this)
+        new GlassDialog.Builder(this)
                 .setTitle(getString(R.string.dialog_save_map))
                 .setView(input)
                 .setPositiveButton(getString(R.string.btn_save), new android.content.DialogInterface.OnClickListener() {
@@ -497,7 +557,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
         if (!showManage) {
             // 加载模式：支持多选
             final boolean[] checkedItems = new boolean[maps.size()];
-            new androidx.appcompat.app.AlertDialog.Builder(this)
+            new GlassDialog.Builder(this)
                     .setTitle(getString(R.string.dialog_select_map))
                     .setMultiChoiceItems(mapNames, checkedItems,
                             new android.content.DialogInterface.OnMultiChoiceClickListener() {
@@ -530,7 +590,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
                     .show();
         } else {
             // 管理模式：单选操作
-            new androidx.appcompat.app.AlertDialog.Builder(this)
+            new GlassDialog.Builder(this)
                     .setTitle(getString(R.string.dialog_map_manage))
                     .setItems(mapNames, new android.content.DialogInterface.OnClickListener() {
                         @Override
@@ -548,7 +608,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
     private void showMapOptionsDialog(final NativeHelper.MapManager.MapInfo mapInfo) {
         String[] options = { getString(R.string.action_load), getString(R.string.action_delete),
                 getString(R.string.action_view_details) };
-        new androidx.appcompat.app.AlertDialog.Builder(this)
+        new GlassDialog.Builder(this)
                 .setTitle(mapInfo.name)
                 .setItems(options, new android.content.DialogInterface.OnClickListener() {
                     @Override
@@ -558,7 +618,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
                                 mapManager.loadMap(mapInfo.name);
                                 break;
                             case 1: // 删除
-                                new androidx.appcompat.app.AlertDialog.Builder(ArCamUIActivity.this)
+                                new GlassDialog.Builder(ArCamUIActivity.this)
                                         .setTitle(getString(R.string.dialog_confirm_delete))
                                         .setMessage(getString(R.string.dialog_confirm_delete_message, mapInfo.name))
                                         .setPositiveButton(getString(R.string.action_delete),
@@ -598,7 +658,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
                 getString(R.string.map_details_plane, mapInfo.hasPlane ? getString(R.string.map_details_plane_yes)
                         : getString(R.string.map_details_plane_no));
 
-        new androidx.appcompat.app.AlertDialog.Builder(this)
+        new GlassDialog.Builder(this)
                 .setTitle(getString(R.string.dialog_map_details))
                 .setMessage(details)
                 .setPositiveButton(getString(R.string.button_ok), null)
@@ -743,7 +803,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
     }
 
     /**
-     * 显示加载对话框（使用非弃用的AlertDialog + ProgressBar）
+     * 显示加载对话框（液态玻璃样式 + ProgressBar）
      */
     private void showLoadingDialog(String title, String message) {
         runOnUiThread(new Runnable() {
@@ -772,7 +832,7 @@ public class ArCamUIActivity extends AppCompatActivity implements
                 container.addView(progressBar);
                 container.addView(msgView, textLp);
 
-                loadingDialog = new androidx.appcompat.app.AlertDialog.Builder(ArCamUIActivity.this)
+                loadingDialog = new GlassDialog.Builder(ArCamUIActivity.this)
                         .setTitle(title)
                         .setView(container)
                         .setCancelable(false)
@@ -866,6 +926,8 @@ public class ArCamUIActivity extends AppCompatActivity implements
         }
 
         mFpsMeter.measure();
+        // 液态玻璃帧快照（低分辨率，按钮背景实时透出相机画面）
+        CameraFrameHolder.updateFrame(mRgbaAddr);
         runOnUiThread(new Runnable() {
             @Override
             public void run() {

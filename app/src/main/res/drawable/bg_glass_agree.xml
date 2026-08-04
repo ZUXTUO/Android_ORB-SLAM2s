@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  液态玻璃按钮背景 - 隐私同意按钮
+  禁用态：灰色玻璃（未滚动到底前）
+  启用态：蓝色玻璃（滚动到底后，代码置 enabled=true）
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:drawable="@drawable/bg_glass_gray" />
+    <item android:drawable="@drawable/bg_glass_blue" />
+</selector>
