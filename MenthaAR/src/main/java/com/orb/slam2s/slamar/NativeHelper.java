@@ -32,11 +32,16 @@ public class NativeHelper {
         System.loadLibrary("Mentha_3DOF");            // 独立出来的 3DOF 库
     }
 
+    // 存储MVP回调的集合
+    private ArrayList<OnMVPUpdatedCallback> onMVPUpdatedCallbacks;
+    private final float[] projectionMatrix = new float[16];  // 投影矩阵
+    private final float[] viewMatrix = new float[16];        // 视图矩阵
+    private final float[] modelMatrix = new float[16];       // 模型矩阵
     private int lastTrackingResult;                     // 最后的追踪结果
     private int planeDetectResult;                      // 平面检测结果
     private boolean planeDetected;                      // 是否检测到平面
 
-    // 状态缓冲区实际只使用 3 个 int [tracking, shouldDraw, scaleBits]，
+    // J-4：状态缓冲区实际只使用 3 个 int [tracking, shouldDraw, scaleBits]，
     // 原先的 233 是把 PLANE_DETECTED 常量误当作数组长度
     private final int[] statusBuf = new int[3];
 
@@ -45,40 +50,50 @@ public class NativeHelper {
     // 构造函数，初始化NativeHelper对象
     public NativeHelper(Context context) {
         this.context = context;
+        onMVPUpdatedCallbacks = new ArrayList<>();
         planeDetected = false;
     }
 
-    // 检测平面（在 SLAM 处理线程内调用）
-    // MVP 结果由 native 写回共享内存，UI 渲染线程直接读取；返回平面检测结果
+    // 处理摄像头帧，返回最后的追踪结果
+    public int processCameraFrame(long matAddrGr, long matAddrRgba) {
+        nativeProcessFrameMat(matAddrGr, matAddrRgba, statusBuf);
+        lastTrackingResult = statusBuf[0];
+        boolean shouldDraw = (statusBuf[1] != 0);
+
+        for (OnMVPUpdatedCallback cb : onMVPUpdatedCallbacks) {
+            cb.setDraw(shouldDraw);
+        }
+        return lastTrackingResult;
+    }
+
+    // 检测平面，返回平面检测结果
     public int detectPlane() {
         detect(statusBuf);
         planeDetectResult = statusBuf[1];
-        planeDetected = (planeDetectResult == GlobalConstant.PLANE_DETECTED);
+
+        if (planeDetectResult == GlobalConstant.PLANE_DETECTED) {
+            planeDetected = true;
+            nativeGetMVP(modelMatrix, viewMatrix, projectionMatrix,
+                         GlobalConstant.RESOLUTION_WIDTH, GlobalConstant.RESOLUTION_HEIGHT);
+            for (OnMVPUpdatedCallback cb : onMVPUpdatedCallbacks) {
+                cb.requestReset();
+                cb.onUpdateModelMatrix(modelMatrix);
+                cb.onUpdateProjectionMatrix(projectionMatrix);
+            }
+        } else {
+            planeDetected = false;
+        }
+
+        for (OnMVPUpdatedCallback cb : onMVPUpdatedCallbacks) {
+            cb.setDraw(planeDetected);
+        }
         return planeDetectResult;
     }
 
-    // 本地方法：持久映射共享内存帧缓冲（仅在缓冲创建/尺寸变化时调用一次）
-    public native boolean nativeAttachFrameBuffer(int fd, int size);
-    public native void nativeDetachFrameBuffer();
-    // 本地方法：处理持久映射缓冲中的帧（双缓冲 bufIndex 0/1；每帧只传序号+宽高，无 fd 开销）
-    // native 处理完成后会把 tracking/draw/MVP/点云/slamDoneSeq 直接写回共享内存 header
-    // statusBuf: [0]=tracking, [1]=shouldDraw
-    public native void nativeProcessFrameSharedMem(int bufIndex, int seq, int width, int height, int[] statusBuf);
+    // 本地方法：处理摄像头帧 (statusBuf=[tracking,shouldDraw,scaleBits])
+    public native void nativeProcessFrameMat(long matAddrGr, long matAddrRgba, int[] statusBuf);
 
-    public boolean attachFrameBuffer(int fd, int size) {
-        return nativeAttachFrameBuffer(fd, size);
-    }
-
-    public void detachFrameBuffer() {
-        nativeDetachFrameBuffer();
-    }
-
-    public int processFrameSharedMem(int bufIndex, int seq, int width, int height, int[] statusBuf) {
-        nativeProcessFrameSharedMem(bufIndex, seq, width, height, statusBuf);
-        return statusBuf[0];
-    }
-
-    // 统一获取MVP
+    // 统一获取MVP（替代getM/getV/getP）
     public native void nativeGetMVP(float[] M, float[] V, float[] P, int w, int h);
 
     // 本地方法：进行平面检测
@@ -87,8 +102,8 @@ public class NativeHelper {
     // 本地方法：初始化SLAM
     public native void initSLAM(String path);
 
-    // 关停并释放 SLAM 系统（join 全部工作线程后 delete）
-    // 由 Activity.onDestroy 调用，确保 LM/LC/GlobalReloc 三条线程全部退出
+    // J-13：关停并释放 SLAM 系统（join 全部工作线程后 delete），
+    // Activity.onDestroy 调用，修复 LM/LC/GlobalReloc 三条线程永不退出的问题
     public native void nativeShutdown();
 
     // 供 Activity 生命周期调用的安全封装
@@ -111,8 +126,12 @@ public class NativeHelper {
     }
 
     // 本地方法：保存/加载地图
-    public native void saveMap(String path);
+    public native void saveMap(String path, int maxPoints);
+    public void saveMap(String path) {
+        saveMap(path, -1);
+    }
     public native void loadMapWithId(String path, int mapId, boolean append);
+    // public native int getCurrentMapId();  // 暂未使用（app 无调用点），需要时取消注释
     public native int[] getMapStats();
 
     // 点云显示控制（控制绿色和蓝色点云）
@@ -121,11 +140,12 @@ public class NativeHelper {
 
     // 3DOF功能接口
     public native float[] calculate3DofInsertionPoint(float[] rotationMatrix, int rotation, float distance);
-    // 出参版本——直接填充调用方缓冲，避免每帧 JNI 分配新 float[16]
+    // J-9：出参版本——直接填充调用方缓冲，避免每帧 JNI 分配新 float[16]
     public native void compute3DofMVP(float[] outMvp, float[] rotationMatrix, int rotation, float ratio, float[] objectPos);
 
     // AR对象缩放
     public native void updateArObjectScale(float scaleFactor);
+    // public native float getArObjectScale();  // 暂未使用（app 无调用点），需要时取消注释
 
     public native float[] getMiniMapPoints(int maxPoints);
     public native float[] getTrackedPoints(int maxPoints);
@@ -137,6 +157,20 @@ public class NativeHelper {
     // 获取最后的追踪结果
     public int getLastTrackingResult() {
         return lastTrackingResult;
+    }
+
+    // 添加MVP更新回调
+    public void addOnMVPUpdatedCallback(OnMVPUpdatedCallback onMVPUpdatedCallback) {
+        onMVPUpdatedCallbacks.add(onMVPUpdatedCallback);
+    }
+
+    // MVP更新回调接口
+    public interface OnMVPUpdatedCallback {
+        void onUpdateModelMatrix(float M[]);        // 更新模型矩阵
+        void onUpdateViewMatrix(float M[]);         // 更新视图矩阵
+        void onUpdateProjectionMatrix(float M[]);   // 更新投影矩阵
+        void requestReset();                        // 请求重置
+        void setDraw(boolean flag);                 // 设置是否绘制
     }
 
     // MapManager类：管理地图的保存、加载、删除和查询
@@ -154,23 +188,33 @@ public class NativeHelper {
             this.nativeHelper = nativeHelper;
             this.mapDirectory = new File(context.getExternalFilesDir(null), MAP_DIR_NAME);
 
+            // 确保地图目录存在
             if (!mapDirectory.exists()) {
                 mapDirectory.mkdirs();
             }
         }
 
+        // 保存地图
         public void saveMap(String mapName) {
+            saveMap(mapName, -1);
+        }
+
+        // 保存地图，maxPoints 为特征点上限，<=0 表示使用默认配置
+        public void saveMap(String mapName, int maxPoints) {
             try {
+                // 清理文件名
                 mapName = mapName.replaceAll("[^a-zA-Z0-9_\\-]", "_");
 
                 String mapPath = new File(mapDirectory, mapName + ".bin").getAbsolutePath();
-                nativeHelper.saveMap(mapPath);
+                nativeHelper.saveMap(mapPath, maxPoints);
 
+                // 获取地图统计信息
                 int[] stats = nativeHelper.getMapStats();
                 int keyFrames = stats != null && stats.length > 0 ? stats[0] : 0;
                 int mapPoints = stats != null && stats.length > 1 ? stats[1] : 0;
                 boolean hasPlane = stats != null && stats.length > 2 && stats[2] > 0;
 
+                // 保存元数据
                 MapInfo info = new MapInfo();
                 info.name = mapName;
                 info.keyFrames = keyFrames;
@@ -191,10 +235,12 @@ public class NativeHelper {
             }
         }
 
+        // 加载地图
         public void loadMap(String mapName) {
             loadMapWithId(mapName, 0, false);
         }
 
+        // 加载地图，mapId 指定地图ID，append 控制是否追加
         public void loadMapWithId(String mapName, int mapId, boolean append) {
             try {
                 String mapPath = new File(mapDirectory, mapName + ".bin").getAbsolutePath();
@@ -221,6 +267,7 @@ public class NativeHelper {
             }
         }
 
+        // 删除地图，返回是否删除成功
         public boolean deleteMap(String mapName) {
             try {
                 File mapFile = new File(mapDirectory, mapName + ".bin");
@@ -248,6 +295,7 @@ public class NativeHelper {
             }
         }
 
+        // 获取所有已保存的地图
         public ArrayList<MapInfo> getAllMaps() {
             ArrayList<MapInfo> maps = new ArrayList<>();
 
@@ -265,6 +313,7 @@ public class NativeHelper {
                     String mapName = file.getName().replace(".bin", "");
                     MapInfo info = loadMetadata(mapName);
 
+                    // 如果没有元数据，创建基本信息
                     if (info == null) {
                         info = new MapInfo();
                         info.name = mapName;
@@ -274,6 +323,7 @@ public class NativeHelper {
                         info.mapPoints = 0;
                         info.hasPlane = false;
                     } else {
+                        // 更新文件大小（可能已改变）
                         info.fileSize = file.length();
                     }
 
@@ -281,6 +331,7 @@ public class NativeHelper {
                 }
             }
 
+            // 按创建时间降序排序（最新的在前）
             java.util.Collections.sort(maps, new java.util.Comparator<MapInfo>() {
                 @Override
                 public int compare(MapInfo m1, MapInfo m2) {
@@ -291,6 +342,7 @@ public class NativeHelper {
             return maps;
         }
 
+        // 保存地图元数据
         private void saveMetadata(MapInfo info) {
             try {
                 File metaFile = new File(mapDirectory, info.name + MAP_METADATA_EXT);
@@ -310,6 +362,7 @@ public class NativeHelper {
             }
         }
 
+        // 加载地图元数据
         private MapInfo loadMetadata(String mapName) {
             try {
                 File metaFile = new File(mapDirectory, mapName + MAP_METADATA_EXT);
@@ -338,13 +391,14 @@ public class NativeHelper {
             }
         }
 
+        // MapInfo类：存储地图的元数据信息
         public static class MapInfo {
-            public String name;
-            public int keyFrames;
-            public int mapPoints;
-            public long fileSize;
-            public long createTime;
-            public boolean hasPlane;
+            public String name;         // 地图名称
+            public int keyFrames;       // 关键帧数量
+            public int mapPoints;       // 地图点数量
+            public long fileSize;       // 文件大小（字节）
+            public long createTime;     // 创建时间（毫秒时间戳）
+            public boolean hasPlane;    // 是否包含平面
         }
     }
 }
