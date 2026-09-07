@@ -115,9 +115,14 @@ public final class GLUtils {
         return buffer;
     }
 
+    // 检查当前线程是否有合法的 EGL Context
+    public static boolean hasValidContext() {
+        return android.opengl.EGL14.eglGetCurrentContext() != android.opengl.EGL14.EGL_NO_CONTEXT;
+    }
+
     // 加载或更新 Bitmap 到 2D 纹理
     public static int loadTexture(final Bitmap bitmap, final int usedTexId) {
-        if (bitmap == null || bitmap.isRecycled()) return 0;
+        if (bitmap == null || bitmap.isRecycled() || !hasValidContext()) return 0;
 
         int[] textures = new int[1];
         if (usedTexId == 0) {

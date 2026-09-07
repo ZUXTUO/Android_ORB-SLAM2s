@@ -16,8 +16,11 @@
 package com.orb.slam2s.camera;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
@@ -85,6 +88,9 @@ public class CameraPreviewView extends AspectGLSurfaceView {
     private ExecutorService mAnalyzerExecutor;
     private ExecutorService mIpcSendExecutor;
 
+    private int mCameraCount = -1;
+    private boolean mIsTorchOn = false;
+
     private byte[][] mYuvSendBuffers; // 灰度帧发送双缓冲（复用避免 GC）
     private byte[][] mRgbaBuffers;    // 相机 RGBA 帧双缓冲
     private int mSendPing;            // 当前发送缓冲索引 (0/1)
@@ -93,7 +99,7 @@ public class CameraPreviewView extends AspectGLSurfaceView {
     private GLPassThroughRenderer mPassThroughRenderer;
     private GLPointCloudRenderer mPointCloudRenderer;
 
-    // 点云读取缓冲（共享内存直接读取，零 Binder）
+    // 点云读取缓冲
     private final float[] mPointCloudBuffer = new float[SharedMemoryBuffer.POINTCLOUD_MAX_BYTES / 4];
     private final float[] mTempMvp = new float[48];
     private final float[] mVPMatrix = new float[16];
@@ -105,10 +111,16 @@ public class CameraPreviewView extends AspectGLSurfaceView {
 
     private FrameListener mFrameListener;
 
+    public interface TorchCallback {
+        void onTorchChanged(boolean enabled);
+        void onError(String message);
+    }
+
     public interface FrameListener {
         void onCameraStarted(int width, int height);
         void onCameraStopped();
         void onCameraFrame();
+        default void onCameraUnavailable(int cameraCount) {}
     }
 
     public CameraPreviewView(Context context) {
@@ -171,13 +183,16 @@ public class CameraPreviewView extends AspectGLSurfaceView {
         if (targetState != mState) {
             if (targetState == STATE_STARTED) {
                 connectCamera();
-                if (mFrameListener != null) {
-                    mFrameListener.onCameraStarted(mFrameWidth, mFrameHeight);
-                }
             } else {
                 disconnectCamera();
-                if (mCacheBitmap != null && !mCacheBitmap.isRecycled()) {
-                    mCacheBitmap.recycle();
+                synchronized (mSyncLock) {
+                    if (mCacheBitmap != null) {
+                        Bitmap bmp = mCacheBitmap;
+                        mCacheBitmap = null;
+                        if (!bmp.isRecycled()) {
+                            bmp.recycle();
+                        }
+                    }
                 }
                 if (mFrameListener != null) {
                     mFrameListener.onCameraStopped();
@@ -187,16 +202,121 @@ public class CameraPreviewView extends AspectGLSurfaceView {
         }
     }
 
+    public static int getDeviceCameraCount(Context context) {
+        try {
+            CameraManager cm = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+            if (cm != null) {
+                String[] list = cm.getCameraIdList();
+                return list != null ? list.length : 0;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "获取设备相机数量异常: " + e.getMessage());
+        }
+        return 0;
+    }
+
+    public int getCameraCount() {
+        if (mCameraCount < 0) {
+            mCameraCount = getDeviceCameraCount(getContext());
+        }
+        return mCameraCount;
+    }
+
+    public boolean isTorchOn() {
+        return mIsTorchOn;
+    }
+
+    public boolean isTorchSupported() {
+        if (mCameraX != null) {
+            return mCameraX.getCameraInfo().hasFlashUnit();
+        }
+        return getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH);
+    }
+
+    public void toggleTorch(TorchCallback callback) {
+        setTorchEnabled(!mIsTorchOn, callback);
+    }
+
+    public void setTorchEnabled(boolean enable, TorchCallback callback) {
+        if (mCameraX != null && mCameraX.getCameraInfo().hasFlashUnit()) {
+            ListenableFuture<Void> future = mCameraX.getCameraControl().enableTorch(enable);
+            future.addListener(() -> {
+                try {
+                    future.get();
+                    mIsTorchOn = enable;
+                    if (callback != null) {
+                        callback.onTorchChanged(mIsTorchOn);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "CameraX 手电筒切换异常: " + e.getMessage());
+                    if (callback != null) {
+                        callback.onError(e.getMessage());
+                    }
+                }
+            }, ContextCompat.getMainExecutor(getContext()));
+        } else {
+            // 后备方案：通过 CameraManager 控制手电筒
+            try {
+                CameraManager cm = (CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE);
+                if (cm != null) {
+                    String[] ids = cm.getCameraIdList();
+                    boolean torchFound = false;
+                    for (String id : ids) {
+                        CameraCharacteristics chars = cm.getCameraCharacteristics(id);
+                        Boolean hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                        if (Boolean.TRUE.equals(hasFlash)) {
+                            cm.setTorchMode(id, enable);
+                            mIsTorchOn = enable;
+                            torchFound = true;
+                            if (callback != null) {
+                                callback.onTorchChanged(mIsTorchOn);
+                            }
+                            break;
+                        }
+                    }
+                    if (!torchFound && callback != null) {
+                        callback.onError("设备无可用闪光灯");
+                    }
+                } else if (callback != null) {
+                    callback.onError("CameraManager 不可用");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "CameraManager 手电控制异常: " + e.getMessage());
+                if (callback != null) {
+                    callback.onError(e.getMessage());
+                }
+            }
+        }
+    }
+
     private void connectCamera() {
+        mCameraCount = getDeviceCameraCount(getContext());
+        Log.i(TAG, "自动检测设备相机数量: " + mCameraCount);
+        if (mCameraCount == 0) {
+            Log.w(TAG, "未检测到设备相机，默认保持黑屏");
+            if (mFrameListener != null) {
+                mFrameListener.onCameraUnavailable(0);
+            }
+            return;
+        }
+
         try {
             ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(getContext());
             future.addListener(() -> {
                 try {
                     mCameraProvider = future.get();
+                    if (mCameraProvider.getAvailableCameraInfos().isEmpty()) {
+                        Log.w(TAG, "CameraProvider 未找到可用相机，默认保持黑屏");
+                        if (mFrameListener != null) {
+                            mFrameListener.onCameraUnavailable(0);
+                        }
+                        return;
+                    }
 
                     mFrameWidth = GlobalConstant.RESOLUTION_WIDTH;
                     mFrameHeight = GlobalConstant.RESOLUTION_HEIGHT;
                     mCacheBitmap = Bitmap.createBitmap(mFrameWidth, mFrameHeight, Bitmap.Config.ARGB_8888);
+                    mCacheBitmap.eraseColor(0xFF000000);
 
                     mAnalyzerExecutor = Executors.newSingleThreadExecutor();
                     mIpcSendExecutor = Executors.newSingleThreadExecutor();
@@ -261,34 +381,36 @@ public class CameraPreviewView extends AspectGLSurfaceView {
                                 }
                                 byte[] yBuf = mYuvSendBuffers[mSendPing];
 
-                                if (mCacheBitmap != null && !mCacheBitmap.isRecycled()) {
-                                    if (mCachePixels == null || mCachePixels.length < requiredSize) {
-                                        mCachePixels = new int[requiredSize];
-                                    }
-                                    for (int i = 0; i < requiredSize; i++) {
-                                        int idx = i * 4;
-                                        int r = rgbaBuf[idx] & 0xFF;
-                                        int g = rgbaBuf[idx + 1] & 0xFF;
-                                        int b = rgbaBuf[idx + 2] & 0xFF;
-                                        yBuf[i] = (byte) ((r * 77 + g * 150 + b * 29) >> 8);
-                                        mCachePixels[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
-                                    }
-                                    DeviceCompat.checkAndFlipFrame(mCachePixels, w, h);
-                                    mCacheBitmap.setPixels(mCachePixels, 0, w, 0, 0, w, h);
-                                    queueEvent(() -> {
-                                        synchronized (mSyncLock) {
-                                            if (mCacheBitmap != null && !mCacheBitmap.isRecycled()) {
-                                                GLUtils.loadTexture(mCacheBitmap, mImageTextureId);
-                                            }
+                                synchronized (mSyncLock) {
+                                    if (mCacheBitmap != null && !mCacheBitmap.isRecycled()) {
+                                        if (mCachePixels == null || mCachePixels.length < requiredSize) {
+                                            mCachePixels = new int[requiredSize];
                                         }
-                                    });
-                                } else {
-                                    for (int i = 0; i < requiredSize; i++) {
-                                        int idx = i * 4;
-                                        int r = rgbaBuf[idx] & 0xFF;
-                                        int g = rgbaBuf[idx + 1] & 0xFF;
-                                        int b = rgbaBuf[idx + 2] & 0xFF;
-                                        yBuf[i] = (byte) ((r * 77 + g * 150 + b * 29) >> 8);
+                                        for (int i = 0; i < requiredSize; i++) {
+                                            int idx = i * 4;
+                                            int r = rgbaBuf[idx] & 0xFF;
+                                            int g = rgbaBuf[idx + 1] & 0xFF;
+                                            int b = rgbaBuf[idx + 2] & 0xFF;
+                                            yBuf[i] = (byte) ((r * 77 + g * 150 + b * 29) >> 8);
+                                            mCachePixels[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+                                        }
+                                        DeviceCompat.checkAndFlipFrame(mCachePixels, w, h);
+                                        mCacheBitmap.setPixels(mCachePixels, 0, w, 0, 0, w, h);
+                                        queueEvent(() -> {
+                                            synchronized (mSyncLock) {
+                                                if (mSurfaceExist && mCacheBitmap != null && !mCacheBitmap.isRecycled()) {
+                                                    GLUtils.loadTexture(mCacheBitmap, mImageTextureId);
+                                                }
+                                            }
+                                        });
+                                    } else {
+                                        for (int i = 0; i < requiredSize; i++) {
+                                            int idx = i * 4;
+                                            int r = rgbaBuf[idx] & 0xFF;
+                                            int g = rgbaBuf[idx + 1] & 0xFF;
+                                            int b = rgbaBuf[idx + 2] & 0xFF;
+                                            yBuf[i] = (byte) ((r * 77 + g * 150 + b * 29) >> 8);
+                                        }
                                     }
                                 }
 
@@ -334,22 +456,49 @@ public class CameraPreviewView extends AspectGLSurfaceView {
                         }
                     });
 
-                    CameraSelector selector = new CameraSelector.Builder()
-                            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                            .build();
+                    CameraSelector selector;
+                    if (mCameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                        selector = CameraSelector.DEFAULT_BACK_CAMERA;
+                    } else if (mCameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                        Log.w(TAG, "无后置相机，回退至前置相机");
+                        selector = CameraSelector.DEFAULT_FRONT_CAMERA;
+                    } else {
+                        Log.w(TAG, "无可用前后置相机，保持黑屏");
+                        if (mFrameListener != null) {
+                            mFrameListener.onCameraUnavailable(0);
+                        }
+                        return;
+                    }
 
                     mCameraProvider.unbindAll();
                     mCameraX = mCameraProvider.bindToLifecycle((LifecycleOwner) getContext(), selector, mImageAnalysis);
+                    if (mFrameListener != null) {
+                        mFrameListener.onCameraStarted(mFrameWidth, mFrameHeight);
+                    }
                 } catch (Exception e) {
                     Log.e(TAG, "CameraX 初始化失败: " + e.getMessage());
+                    if (mFrameListener != null) {
+                        mFrameListener.onCameraUnavailable(0);
+                    }
                 }
             }, ContextCompat.getMainExecutor(getContext()));
         } catch (Exception ex) {
             Log.e(TAG, "初始化 CameraX 异常: " + ex.getMessage());
+            if (mFrameListener != null) {
+                mFrameListener.onCameraUnavailable(0);
+            }
         }
     }
 
     private void disconnectCamera() {
+        if (mIsTorchOn) {
+            if (mCameraX != null) {
+                try {
+                    mCameraX.getCameraControl().enableTorch(false);
+                } catch (Exception ignored) {}
+            }
+            mIsTorchOn = false;
+        }
         if (mCameraProvider != null) {
             final ProcessCameraProvider provider = mCameraProvider;
             new Handler(Looper.getMainLooper()).post(() -> {
@@ -390,20 +539,25 @@ public class CameraPreviewView extends AspectGLSurfaceView {
         synchronized (mSyncLock) {
             mSurfaceExist = false;
             checkCurrentState();
-            if (mPassThroughRenderer != null) {
-                mPassThroughRenderer.destroy();
-            }
-            if (mPointCloudRenderer != null) {
-                mPointCloudRenderer.destroy();
-                mPointCloudRenderer = null;
-            }
         }
+        queueEvent(() -> {
+            synchronized (mSyncLock) {
+                if (mPassThroughRenderer != null) {
+                    mPassThroughRenderer.destroy();
+                }
+                if (mPointCloudRenderer != null) {
+                    mPointCloudRenderer.destroy();
+                    mPointCloudRenderer = null;
+                }
+            }
+        });
     }
 
     private class CameraRenderer implements GLSurfaceView.Renderer {
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Bitmap bitmap = Bitmap.createBitmap(GlobalConstant.RESOLUTION_WIDTH, GlobalConstant.RESOLUTION_HEIGHT, Bitmap.Config.ARGB_8888);
+            bitmap.eraseColor(0xFF000000);
             mImageTextureId = GLUtils.loadTexture(bitmap, 0);
             bitmap.recycle();
 
@@ -424,7 +578,7 @@ public class CameraPreviewView extends AspectGLSurfaceView {
 
         @Override
         public void onDrawFrame(GL10 gl) {
-            GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
 
             mPassThroughRenderer.onDrawFrame(mImageTextureId);

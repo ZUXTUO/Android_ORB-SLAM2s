@@ -109,7 +109,9 @@ public class GLPointCloudRenderer {
 
     public void destroy() {
         if (mProgram != 0) {
-            GLES20.glDeleteProgram(mProgram);
+            if (GLUtils.hasValidContext()) {
+                GLES20.glDeleteProgram(mProgram);
+            }
             mProgram = 0;
         }
     }

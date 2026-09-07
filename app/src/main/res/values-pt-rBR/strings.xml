@@ -66,4 +66,11 @@
     <string name="privacy_agree">Aceitar &amp; Continuar</string>
     <string name="privacy_load_error">Falha ao carregar a política de privacidade. Por favor tente novamente.</string>
 
+    <string name="btn_flashlight_off">Lanterna: Desl.</string>
+    <string name="btn_flashlight_on">✓Lanterna: Lig.</string>
+    <string name="hint_flashlight_on">Lanterna ligada</string>
+    <string name="hint_flashlight_off">Lanterna desligada</string>
+    <string name="hint_flashlight_unavailable">Lanterna não disponível neste dispositivo</string>
+    <string name="hint_no_camera">Nenhuma câmera detectada (modo tela preta)</string>
+
 </resources>

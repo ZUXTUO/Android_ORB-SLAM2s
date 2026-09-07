@@ -119,7 +119,9 @@ public class GLPassThroughRenderer {
 
         void destroy() {
             if (mProgramId != 0) {
-                GLES20.glDeleteProgram(mProgramId);
+                if (GLUtils.hasValidContext()) {
+                    GLES20.glDeleteProgram(mProgramId);
+                }
                 mProgramId = 0;
             }
         }
