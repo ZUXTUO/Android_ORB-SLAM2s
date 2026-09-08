@@ -652,6 +652,8 @@ Java_com_orb_slam2s_slamar_NativeHelper_loadMapWithId(JNIEnv *env, jobject insta
 JNIEXPORT void JNICALL
 Java_com_orb_slam2s_slamar_NativeHelper_detect(JNIEnv *env, jobject instance,
                                                jintArray statusBuf_) {
+    // 平面检测在帧处理线程串行执行，其耗时直接推迟下一帧处理
+    VT_PROFILE_SCOPE("JNI_DetectPlane");
     jint *statusBuf = env->GetIntArrayElements(statusBuf_, nullptr);
 
     // 锁内快照 System*：本函数与 nativeShutdown 同为 UI 线程，不并发，
@@ -959,6 +961,8 @@ JNIEXPORT void JNICALL
 Java_com_orb_slam2s_slamar_NativeHelper_nativeProcessFrameSharedMem(
     JNIEnv* env, jobject instance, jint bufIndex, jint seq, jint width, jint height, jintArray statusBuf_)
 {
+    // 帧入口全程耗时（含共享内存锁与 gSlamPtrLock 等待、结果写回），与 processImage 相减即预处理开销
+    VT_PROFILE_SCOPE("JNI_FrameProcess");
     if (width <= 0 || height <= 0) return;
     jint* statusBuf = env->GetIntArrayElements(statusBuf_, nullptr);
     if (!statusBuf) return;

@@ -1315,7 +1315,7 @@ static void FastIntegerGaussianBlur7x7(const cv::Mat& srcPadded, cv::Mat& dstPad
     const int rows = srcPadded.rows;
     const int cols = srcPadded.cols;
 
-    // 线程局部平坦缓存区
+    // 线程局部平坦缓存区：水平趟输出恒在 [0,255]，用 uint8 存储
     static thread_local std::vector<uint8_t> tempBuf;
     if (tempBuf.size() < (size_t)(rows * cols)) {
         tempBuf.resize(rows * cols);
@@ -1325,8 +1325,7 @@ static void FastIntegerGaussianBlur7x7(const cv::Mat& srcPadded, cv::Mat& dstPad
     for (int r = 0; r < rows; ++r) {
         const uchar* srcRow = srcPadded.ptr<uchar>(r);
         uint8_t* tempRow = &tempBuf[r * cols];
-        // 边界内像素 (3 到 cols-4)。对称折叠：mul_h(x[c-h]+x[c+h]) 由整数分配律与逐项加权逐位等价，
-        // 每像素算术操作数 27 -> 19
+        // 边界内像素 (3 到 cols-4)。对称折叠：mul_h(x[c-h]+x[c+h]) 与逐项加权由整数分配律逐位等价
         for (int c = 3; c < cols - 3; ++c) {
             int val = mul36(srcRow[c-3] + srcRow[c+3]) + mul67(srcRow[c-2] + srcRow[c+2]) +
                       mul98(srcRow[c-1] + srcRow[c+1]) + mul110(srcRow[c]);
@@ -1371,7 +1370,7 @@ static void FastIntegerGaussianBlur7x7(const cv::Mat& srcPadded, cv::Mat& dstPad
         const uint8_t* tempRowP3 = &tempBuf[(r + 3) * cols];
 
         for (int c = 0; c < cols; ++c) {
-            // 垂直方向同样对称折叠
+            // 垂直方向同样对称折叠（与水平趟同一等价变换）
             int val = mul36(tempRowM3[c] + tempRowP3[c]) + mul67(tempRowM2[c] + tempRowP2[c]) +
                       mul98(tempRowM1[c] + tempRowP1[c]) + mul110(tempRow0[c]);
             int pix = (val + 256) >> 9;

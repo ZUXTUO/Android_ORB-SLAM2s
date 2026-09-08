@@ -397,7 +397,7 @@ void MapPoint::ComputeDistinctiveDescriptors()
     int BestMedian = INT_MAX;
     int BestIdx = 0;
 
-    // 直接对矩阵行做选择
+    // 直接对矩阵行做选择：该行此后不再使用
     const size_t medianIdx = (N - 1) / 2;
     for(size_t i = 0; i < N; ++i)
     {

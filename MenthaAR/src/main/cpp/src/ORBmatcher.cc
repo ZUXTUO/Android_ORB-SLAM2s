@@ -1874,8 +1874,7 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
     }
 }
 
-// ORB 描述子汉明距离 (32 字节)。arm64 下 __builtin_popcountll 映射为单条 popcnt；
-// 其余 ABI 生成 SWAR 序列（逐操作计数低于 256 字节查表法，故不采用 LUT 实现）
+// ORB 描述子汉明距离 (32 字节)，__builtin_popcountll 在 arm64 映射为单条 popcnt
 int ORBmatcher::DescriptorDistance(const uint8_t* pa, const uint8_t* pb)
 {
     const uint64_t* a64 = reinterpret_cast<const uint64_t*>(pa);
