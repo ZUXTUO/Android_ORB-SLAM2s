@@ -47,9 +47,6 @@ public class NativeHelper {
         nativeProcessFrameSharedMem(bufIndex, seq, width, height, statusBuf);
     }
 
-    // 统一获取MVP
-    public native void nativeGetMVP(float[] M, float[] V, float[] P, int w, int h);
-
     // 本地方法：进行平面检测
     public native void detect(int[] statusBuf);
 
@@ -87,11 +84,4 @@ public class NativeHelper {
 
     // AR对象缩放
     public native void updateArObjectScale(float scaleFactor);
-
-    public native float[] getMiniMapPoints(int maxPoints);
-    public native float[] getTrackedPoints(int maxPoints);
-    public native float[] getAllArObjectsData();
-
-    // 视图矩阵
-    public native void getV(float viewM[]);
 }

@@ -553,11 +553,10 @@ namespace srrg_hbst {
 
       // ds 為樹中所有標識符準備匹配向量映射
       matches_.clear();
+      // 不按查询规模预留：每个关键帧通常仅命中个位数匹配，按 N_query 预留会让
+      // 每个 KF 独占 72B×N_query 的堆空间（KF 数 500、N=1000 时单次调用约 34MiB）
       for (const uint64_t identifier_tree : _added_identifiers_train) {
         matches_.insert(std::make_pair(identifier_tree, MatchVector()));
-
-        // ds 預分配空間以加速匹配添加
-        matches_.at(identifier_tree).reserve(matchables_query_.size());
       }
 
       // 在循环外部定义并预分配 MatchMap 内存，实现单帧查找的零堆内存分配

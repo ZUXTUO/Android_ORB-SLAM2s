@@ -91,7 +91,7 @@ public:
     void StopGlobalRelocThread();
 
     // 对齐工具
-    bool HasMapAlignment() const { return mbHaveMapAlign; }
+    bool HasMapAlignment() const { return mbHaveMapAlign.load(std::memory_order_relaxed); }
     void ClearMapAlignment();
     void ClearRelocCache();
     cv::Mat GetMapAlignedPose(const cv::Mat &TcwSlam);
@@ -279,7 +279,8 @@ protected:
 
     // 从SLAM世界到加载地图世界的稳定对齐
     cv::Mat mT_map_from_slam; // 4x4
-    bool mbHaveMapAlign = false;
+    // 由 SLAM 线程写、binder/GL 线程读（HasMapAlignment），须保持原子量
+    std::atomic<bool> mbHaveMapAlign{false};
     float mAlignConfidence = 0.0f;
     double mLastAlignTs = 0.0;
     std::atomic<float> mRelocMatchScore{0.0f};

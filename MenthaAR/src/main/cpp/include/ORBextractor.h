@@ -104,7 +104,6 @@ public:
 protected:
 
     void ComputePyramid(cv::Mat image);
-    void ComputeKeyPointsOctTree(std::vector<std::vector<cv::KeyPoint> >& allKeypoints);
 
     // 多屏障合并辅助函数
     void detectAndOrientLevels(const cv::Range& range,

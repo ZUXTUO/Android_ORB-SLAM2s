@@ -345,8 +345,8 @@ float MapPoint::GetFoundRatio()
 
 void MapPoint::ComputeDistinctiveDescriptors()
 {
-    const uint8_t* descPtrs[MAPPOINT_DESC_MAX_OBS];
-    cv::Mat descMats[MAPPOINT_DESC_MAX_OBS];
+    // 锁内拷贝描述子字节：副本自包含，后续无锁计算不依赖 KeyFrame 生命周期
+    uint8_t descBuf[MAPPOINT_DESC_MAX_OBS][ORB_DESC_COLS];
     size_t nDescs = 0;
 
     {
@@ -357,14 +357,12 @@ void MapPoint::ComputeDistinctiveDescriptors()
         for(const auto& mit : mObservations)
         {
             KeyFrame* pKF = mit.first;
-            if(pKF && !pKF->isBad())
+            if(pKF && !pKF->isBad() && nDescs < MAPPOINT_DESC_MAX_OBS)
             {
-                if (nDescs < MAPPOINT_DESC_MAX_OBS)
-                {
-                    descPtrs[nDescs] = pKF->mDescriptors.ptr<uint8_t>(mit.second);
-                    descMats[nDescs] = pKF->mDescriptors.row(mit.second);
-                    nDescs++;
-                }
+                if(mit.second >= (size_t)pKF->mDescriptors.rows)
+                    continue;   // 观测索引失效（描述子行数不足），跳过
+                std::memcpy(descBuf[nDescs], pKF->mDescriptors.ptr<uint8_t>(mit.second), ORB_DESC_COLS);
+                nDescs++;
             }
         }
     }
@@ -378,7 +376,8 @@ void MapPoint::ComputeDistinctiveDescriptors()
     if (N <= 2)
     {
         unique_lock<mutex> lock(mMutexFeatures);
-        std::atomic_store(&mDescriptor, std::make_shared<const cv::Mat>(descMats[0].clone()));
+        std::atomic_store(&mDescriptor, std::make_shared<const cv::Mat>(
+            cv::Mat(1, ORB_DESC_COLS, CV_8U, descBuf[0]).clone()));
         return;
     }
 
@@ -389,7 +388,7 @@ void MapPoint::ComputeDistinctiveDescriptors()
         distsMat[i][i] = 0;
         for(size_t j = i + 1; j < N; ++j)
         {
-            int distij = ORBmatcher::DescriptorDistance(descPtrs[i], descPtrs[j]);
+            int distij = ORBmatcher::DescriptorDistance(descBuf[i], descBuf[j]);
             distsMat[i][j] = distij;
             distsMat[j][i] = distij;
         }
@@ -397,25 +396,25 @@ void MapPoint::ComputeDistinctiveDescriptors()
 
     int BestMedian = INT_MAX;
     int BestIdx = 0;
-    int rowDists[MAPPOINT_DESC_MAX_OBS];
 
+    // 直接对矩阵行做选择
+    const size_t medianIdx = (N - 1) / 2;
     for(size_t i = 0; i < N; ++i)
     {
-        std::memcpy(rowDists, distsMat[i], N * sizeof(int));
-        size_t medianIdx = (N - 1) / 2;
-        std::nth_element(rowDists, rowDists + medianIdx, rowDists + N);
-        int median = rowDists[medianIdx];
+        std::nth_element(distsMat[i], distsMat[i] + medianIdx, distsMat[i] + N);
+        const int median = distsMat[i][medianIdx];
 
         if(median < BestMedian)
         {
             BestMedian = median;
-            BestIdx = i;
+            BestIdx = (int)i;
         }
     }
 
     {
         unique_lock<mutex> lock(mMutexFeatures);
-        std::atomic_store(&mDescriptor, std::make_shared<const cv::Mat>(descMats[BestIdx].clone()));
+        std::atomic_store(&mDescriptor, std::make_shared<const cv::Mat>(
+            cv::Mat(1, ORB_DESC_COLS, CV_8U, descBuf[BestIdx]).clone()));
     }
 }
 

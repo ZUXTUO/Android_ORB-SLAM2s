@@ -201,15 +201,13 @@ vector<KeyFrame*> KeyFrameDatabase::DetectRelocalizationCandidates(Frame *F)
 
         if (F->mDescriptors.empty()) return vector<KeyFrame*>();
 
-        std::vector<size_t> objects(F->N);
-        for(int i=0; i<F->N; i++) objects[i] = i;
-
-        HBSTTree::MatchableVector query_matchables = HBSTTree::getMatchables(F->mDescriptors, objects, F->mnId);
+        // 复用帧自身缓存的 HBST 树（重定位路径上已由 SearchByHBST 构建）；
+        // matchables 归树所有，调用方不得 delete
+        std::shared_ptr<HBSTTree> treeQuery = F->GetHBSTTree();
+        if (!treeQuery) return vector<KeyFrame*>();
 
         HBSTTree::MatchVectorMap matches;
-        mpTree->match(query_matchables, matches, KFD_HBST_MATCH_LIMIT);
-
-        for (auto m : query_matchables) delete m;
+        mpTree->match(treeQuery->matchables(), matches, KFD_HBST_MATCH_LIMIT);
 
         for (const auto& match_pair : matches) {
             long unsigned int id = match_pair.first;

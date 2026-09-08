@@ -1874,28 +1874,8 @@ void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, 
     }
 }
 
-// 8-bit popcount 查表（256 字节，常驻 L1 cache）：纯标量、全 CPU 兼容的汉明距离实现，
-// 逐字节查表累加，无损精度；不依赖编译器内建与目标指令集，在无硬件 popcount 平台更省指令。
-static const uint8_t POPCNT8_LUT[256] = {
-    0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
-    3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-    3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
-    4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8
-};
-
-// ORB 描述子汉明距离 (32 字节)。
+// ORB 描述子汉明距离 (32 字节)。arm64 下 __builtin_popcountll 映射为单条 popcnt；
+// 其余 ABI 生成 SWAR 序列（逐操作计数低于 256 字节查表法，故不采用 LUT 实现）
 int ORBmatcher::DescriptorDistance(const uint8_t* pa, const uint8_t* pb)
 {
     const uint64_t* a64 = reinterpret_cast<const uint64_t*>(pa);
@@ -1904,11 +1884,6 @@ int ORBmatcher::DescriptorDistance(const uint8_t* pa, const uint8_t* pb)
            __builtin_popcountll(a64[1] ^ b64[1]) +
            __builtin_popcountll(a64[2] ^ b64[2]) +
            __builtin_popcountll(a64[3] ^ b64[3]);
-}
-
-int ORBmatcher::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
-{
-    return DescriptorDistance(a.ptr<uint8_t>(), b.ptr<uint8_t>());
 }
 
 } //namespace ORB_SLAM2
