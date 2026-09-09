@@ -18,9 +18,12 @@ package com.orb.slam2s.app;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.camera2.CameraManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -35,6 +38,7 @@ import com.orb.slam2s.ui.MainActivity;
 // 该 Activity 承担权限检查与分发逻辑（非纯启动图），不采用 Android 12+ SplashScreen API
 @SuppressLint("CustomSplashScreen")
 public class SplashActivity extends Activity {
+    private static final String TAG = "SplashActivity";
     private static final int REQUEST_PERMISSION = 233;
 
     @Override
@@ -46,7 +50,25 @@ public class SplashActivity extends Activity {
         }
     }
 
+    private int getCameraCount() {
+        try {
+            CameraManager cm = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+            if (cm != null) {
+                String[] list = cm.getCameraIdList();
+                return list != null ? list.length : 0;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "检测相机列表异常: " + e.getMessage());
+        }
+        return 0;
+    }
+
     private boolean checkPermission() {
+        if (getCameraCount() == 0) {
+            Log.w(TAG, "设备无物理相机，跳过相机权限申请直接进入主界面");
+            return true;
+        }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
             if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {

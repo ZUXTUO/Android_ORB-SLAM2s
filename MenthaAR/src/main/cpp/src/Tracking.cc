@@ -2724,16 +2724,14 @@ bool Tracking::Relocalization()
         const bool bRunFallback = (mConsecutiveLostFrames <= 3) || ((mCurrentFrame.mnId % 2) == 0);
         if (bRunFallback && pTree && !mCurrentFrame.mDescriptors.empty() && refDesc.rows > 0 && refSnaps && refDesc.rows == (int)refSnaps->size()) {
             VT_PROFILE_SCOPE("Reloc_Fallback");
-            std::vector<size_t> query_objects;
-            query_objects.reserve(mCurrentFrame.N);
-            for(int i=0; i<mCurrentFrame.N; i++) query_objects.push_back(i);
-
-            HBSTTree::MatchableVector query_matchables = HBSTTree::getMatchables(mCurrentFrame.mDescriptors, query_objects, 0);
+            // 复用本帧缓存的 HBST 树（DetectRelocalizationCandidates 已构建）；
+            // matchables 由树持有，不可 delete
+            std::shared_ptr<HBSTTree> treeFrame = mCurrentFrame.GetHBSTTree();
+            if(!treeFrame)
+                return false;   // 不可达：上方已确认 mCurrentFrame.mDescriptors 非空
 
             HBSTTree::MatchVector treeMatches;
-            pTree->match(query_matchables, treeMatches, HBST_MATCH_MAX_DIST); // 最大描述子距离 75
-
-            for(auto m : query_matchables) delete m;
+            pTree->match(treeFrame->matchables(), treeMatches, HBST_MATCH_MAX_DIST); // 最大描述子距离 75
 
             if(treeMatches.size() >= HBST_RELOC_MIN_MATCHES) {
                 // 收集2D-3D点对应关系

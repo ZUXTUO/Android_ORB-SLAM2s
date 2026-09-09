@@ -538,9 +538,6 @@ const float LOADED_MATCH_RADIUS_SCALE_ALIGNED = 1.8f;
 // 主线程重定位候选 KF 上限
 const int RELOC_MAX_CANDIDATE_KFS = 3;
 
-// 重定位 PnP RANSAC 总超时（毫秒）
-const int RELOC_PNP_TIMEOUT_MS = 1000;
-
 // 每轮 RANSAC 迭代次数
 const int RELOC_RANSAC_ROUND_ITERS = 5;
 
